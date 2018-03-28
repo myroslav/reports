@@ -2,6 +2,7 @@ import os.path
 import shutil
 from tempfile import NamedTemporaryFile
 from retrying import retry
+from time import time
 
 import boto3
 from botocore.exceptions import ClientError
@@ -213,7 +214,7 @@ if SWIFT:
                     )
             url = generate_temp_url(
                         full_path,
-                        self.config.expires,
+                        int(time() + int(self.config.expires)),
                         self.temporary_url_key,
                         'GET'
                     ).split(self.config.bucket)[1]
