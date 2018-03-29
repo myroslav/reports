@@ -256,7 +256,7 @@ function check_award_for_bid(tender, bid) {
     (tender.awards || []).forEach(function(award) {
         if (award.bid_id === bid.id) {
             is_awarded = true;
-            if (['active', 'pending'].indexOf(award.status) !== -1) {
+            if (['active', 'pending', 'cancelled'].indexOf(award.status) !== -1) {
                 checker = true;
             }
         }
@@ -270,7 +270,7 @@ function check_award_for_bid_multilot(tender, bid, lot) {
     (tender.awards || []).forEach(function(award) {
         if ((award.bid_id === bid.id) && (award.lotID === lot.id)) {
             is_awarded = true;
-            if (['active', 'pending'].indexOf(award.status) !== -1) {
+            if (['active', 'pending', 'cancelled'].indexOf(award.status) !== -1) {
                 checker = true;
             }
         }
