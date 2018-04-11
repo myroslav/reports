@@ -253,12 +253,13 @@ function find_lot_for_bid(tender, lotValue) {
 function check_award_for_bid(tender, bid) {
     var checker = false;
     var is_awarded = false;
+    if ('awards' in tender) {
+        tender.awards.sort(function(award) { return award.date; });
+    }
     (tender.awards || []).forEach(function(award) {
         if (award.bid_id === bid.id) {
             is_awarded = true;
-            if (['active', 'pending', 'cancelled'].indexOf(award.status) !== -1) {
-                checker = true;
-            }
+            checker = (['active', 'pending', 'cancelled'].indexOf(award.status) !== -1);
         }
     });
     return ((checker) || (!is_awarded));
@@ -267,12 +268,13 @@ function check_award_for_bid(tender, bid) {
 function check_award_for_bid_multilot(tender, bid, lot) {
     var checker = false;
     var is_awarded = false;
+    if ('awards' in tender) {
+        tender.awards.sort(function(award) { return award.date; });
+    }
     (tender.awards || []).forEach(function(award) {
         if ((award.bid_id === bid.id) && (award.lotID === lot.id)) {
             is_awarded = true;
-            if (['active', 'pending', 'cancelled'].indexOf(award.status) !== -1) {
-                checker = true;
-            }
+            checker = (['active', 'pending', 'cancelled'].indexOf(award.status) !== -1);
         }
     });
     // this check is unnecessary
