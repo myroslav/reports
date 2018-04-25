@@ -260,7 +260,10 @@ function check_award_for_bid(tender, bid) {
             if (date === null) {
                 date = award.date;
             }
-            checker = (['active', 'pending', 'cancelled'].indexOf(award.status) !== -1 && (date >= award.date));
+            if (award.date >= date) {
+                date = award.date;
+                checker = (['active', 'pending', 'cancelled'].indexOf(award.status) !== -1);
+            }
         }
     });
     return ((checker) || (!is_awarded));
@@ -276,7 +279,10 @@ function check_award_for_bid_multilot(tender, bid, lot) {
             if (date === null) {
                 date = award.date;
             }
-            checker = (['active', 'pending', 'cancelled'].indexOf(award.status) !== -1 && (date >= award.date));
+            if (award.date >= date) {
+                date = award.date;
+                checker = (['active', 'pending', 'cancelled'].indexOf(award.status) !== -1);
+            }
         }
     });
     // this check is unnecessary
@@ -319,7 +325,8 @@ function get_info_about_cancelled_lot(actual_tender, old_tender, bid, lot) {
         });
     } else {
         if ("awards" in old_tender) {
-            return (check_qualification_for_bid(actual_tender, bid, lot) && check_award_for_bid_multilot(actual_tender, bid, lot));
+            return (check_qualification_for_bid(lot.status === 'cancelled' ? old_tender : actual_tender, bid, lot) &&
+            check_award_for_bid_multilot(actual_tender, bid, lot));
         }
         else {
             return check_qualification_for_bid(actual_tender, bid, lot);
