@@ -91,6 +91,9 @@ class ReportBidsViewTestCase(BaseBidsUtilityTest):
     def test_bids_view_valid(self):
         data = {
             "date": "2017-12-15T00:01:50+02:00",
+            "qualificationPeriod": {
+                "startDate": "2017-11-15",
+            },
             "procurementMethodType": "belowThreshold",
             "status": "cancelled",
             "bids": [{
@@ -101,7 +104,8 @@ class ReportBidsViewTestCase(BaseBidsUtilityTest):
             }],
             "awards": [{
                 "bid_id": "bid_id",
-                "status": "active"
+                "status": "active",
+                "date": "2017-11-16"
             }]
         }
         self.assertLen(1, data)
@@ -134,7 +138,8 @@ class ReportBidsViewTestCase(BaseBidsUtilityTest):
             }],
             "awards": [{
                 "bid_id": "bid_id",
-                "status": "active"
+                "status": "active",
+                "date": "2017-12-02T00:00:00Z"
             }]
         }
 
@@ -179,12 +184,13 @@ class ReportBidsViewTestCase(BaseBidsUtilityTest):
             "bids": [{
                 "id": "bid_id",
                 "status": "active",
-                "date": "2017-12-01T00:00:00Z",
+                "date": "2017-12-03T00:00:00Z",
                 "owner": "test"
             }],
             "awards": [{
                 "bid_id": "bid_id",
-                "status": "active"
+                "status": "active",
+                "date": "2017-12-02T00:00:00Z"
             }]
         }
         self.assertLen(1, data)
@@ -216,7 +222,8 @@ class ReportBidsViewTestCase(BaseBidsUtilityTest):
             "awards": [{
                 "bid_id": "bid_id",
                 "status": "active",
-                "lotID": "lot_id"
+                "lotID": "lot_id",
+                "date": "2017-12-01T00:00:00Z"
             }],
             "bids": [{
                 "id": "bid_id",
@@ -273,7 +280,8 @@ class ReportBidsViewTestCase(BaseBidsUtilityTest):
             }],
             "awards": [{
                 "bid_id": "bid_id",
-                "status": "active"
+                "status": "active",
+                "date": "2017-12-01T00:00:00Z",
             }]
         }
         self.assertLen(1, data)

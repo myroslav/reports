@@ -42,7 +42,8 @@ class ReportInvoicesUtilityTestCase(BaseInvoicesUtilityTest):
             }],
             "awards": [{
                 "bid_id": "bid_id",
-                "status": "active"
+                "status": "active",
+                "date": "2017-12-01T00:00:00Z",
             }]
         }
         doc = copy(self.test_data)

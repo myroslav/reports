@@ -4,12 +4,12 @@ db:
   name: reports-test
 
 user:
-  username: test
-  password: test
+  username:
+  password:
 
 admin:
-  username: admin
-  password: admin
+  username:
+  password:
 
 out:
   out_dir: test

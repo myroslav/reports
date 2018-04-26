@@ -15,7 +15,7 @@ from reports.helpers import get_arguments_parser, read_config
 class BaseUtilityTest(unittest.TestCase):
 
     def setUp(self):
-        self.server = couchdb.Server('http://admin:admin@127.0.0.1:5984')
+        self.server = couchdb.Server('http://127.0.0.1:5984')
         self.test_data = test_data
         self.db_name = 'reports-test'
         if self.db_name not in self.server:

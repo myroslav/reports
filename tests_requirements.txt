@@ -1,0 +1,9 @@
+couchdb
+mock
+requests
+arrow
+iso8601
+nose
+pyyaml
+retrying
+repoze.lru
