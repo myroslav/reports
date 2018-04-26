@@ -2,18 +2,20 @@
 import unittest
 import couchdb
 import mock
+import yaml
 from reports.utilities import bids, invoices, tenders, refunds
 from copy import copy
 from reports.tests.utils import(
     get_mock_parser,
     test_data
 )
+from reports.helpers import get_arguments_parser, read_config
 
 
 class BaseUtilityTest(unittest.TestCase):
 
     def setUp(self):
-        self.server = couchdb.Server('http://test:test@127.0.0.1:5984')
+        self.server = couchdb.Server('http://127.0.0.1:5984')
         self.test_data = test_data
         self.db_name = 'reports-test'
         if self.db_name not in self.server:
@@ -22,19 +24,19 @@ class BaseUtilityTest(unittest.TestCase):
     def test_payments_computation(self):
         for x in [0, 10000, 20000]:
             self.assertEqual(
-                self.utility.config.payments[0], self.utility.get_payment(x))
+                self.utility.config.payments()[0], self.utility.get_payment(x))
         for x in [20001, 40000, 50000]:
             self.assertEqual(
-                self.utility.config.payments[1], self.utility.get_payment(x))
+                self.utility.config.payments()[1], self.utility.get_payment(x))
         for x in [50001, 100000, 200000]:
             self.assertEqual(
-                self.utility.config.payments[2], self.utility.get_payment(x))
+                self.utility.config.payments()[2], self.utility.get_payment(x))
         for x in [200001, 500000, 1000000]:
             self.assertEqual(
-                self.utility.config.payments[3], self.utility.get_payment(x))
+                self.utility.config.payments()[3], self.utility.get_payment(x))
         for x in [1000001, 10000000, 2000000]:
             self.assertEqual(
-                self.utility.config.payments[4], self.utility.get_payment(x))
+                self.utility.config.payments()[4], self.utility.get_payment(x))
 
     def tearDown(self):
         del self.server[self.db_name]
@@ -43,9 +45,8 @@ class BaseUtilityTest(unittest.TestCase):
         doc = copy(self.test_data)
         doc.update(data)
         self.utility.db.save(doc)
-        self.utility.get_response()
-        self.utility.response = list(self.utility.response)
-        self.assertEqual(count, len(self.utility.response))
+        response = list(self.utility.response)
+        self.assertEqual(count, len(response))
 
 
 class BaseBidsUtilityTest(BaseUtilityTest):
@@ -54,7 +55,9 @@ class BaseBidsUtilityTest(BaseUtilityTest):
         super(BaseBidsUtilityTest, self).setUp()
         mock_parse = get_mock_parser()
         with mock.patch('argparse.ArgumentParser.parse_args', mock_parse):
-            self.utility = bids.BidsUtility()
+            args = get_arguments_parser().parse_args()
+            config = read_config(args.config)
+            self.utility = bids.BidsUtility(args.broker, args.period, config)
 
 
 class BaseTenderUtilityTest(BaseUtilityTest):
@@ -65,7 +68,9 @@ class BaseTenderUtilityTest(BaseUtilityTest):
         type(mock_parse.return_value).kind = mock.PropertyMock(
             return_value=['general'])
         with mock.patch('argparse.ArgumentParser.parse_args', mock_parse):
-            self.utility = tenders.TendersUtility()
+            args = get_arguments_parser().parse_args()
+            config = read_config(args.config)
+            self.utility = tenders.TendersUtility(args.broker, args.period, config)
 
 
 class BaseRefundsUtilityTest(BaseUtilityTest):
@@ -76,7 +81,9 @@ class BaseRefundsUtilityTest(BaseUtilityTest):
         type(mock_parse.return_value).kind = mock.PropertyMock(
             return_value=['general'])
         with mock.patch('argparse.ArgumentParser.parse_args', mock_parse):
-            self.utility = refunds.RefundsUtility()
+            args = get_arguments_parser().parse_args()
+            config = read_config(args.config)
+            self.utility = refunds.RefundsUtility(args.broker, args.period, config, kind=args.kind)
 
 
 class BaseInvoicesUtilityTest(BaseUtilityTest):
@@ -85,4 +92,6 @@ class BaseInvoicesUtilityTest(BaseUtilityTest):
         super(BaseInvoicesUtilityTest, self).setUp()
         mock_parse = get_mock_parser()
         with mock.patch('argparse.ArgumentParser.parse_args', mock_parse):
-            self.utility = invoices.InvoicesUtility()
+            args = get_arguments_parser().parse_args()
+            config = read_config(args.config)
+            self.utility = invoices.InvoicesUtility(args.broker, args.period, config)

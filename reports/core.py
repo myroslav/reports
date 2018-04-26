@@ -1,77 +1,53 @@
 import couchdb
-import couchdb.design
 import os.path
 import csv
 import os
-import os.path
-import arrow
-import time
 import yaml
 import requests
-import argparse
-import requests_cache
+from retrying import retry
 from requests.exceptions import RequestException
 from yaml.scanner import ScannerError
-from dateutil.parser import parse
-from config import Config
-from reports.design import bids_owner_date, tenders_owner_date, jsonpatch,\
-    tenders_lib, bids_lib
 from couchdb.design import ViewDefinition
 from logging import getLogger
-from reports.helpers import get_cmd_parser, create_db_url, Kind, Status
+from reports.config import Config
+from reports.design import bids_owner_date, tenders_owner_date, jsonpatch,\
+    tenders_lib, bids_lib
+from reports.helpers import prepare_report_interval, prepare_result_file_name,\
+    value_currency_normalize
 
 
-views = [bids_owner_date, tenders_owner_date]
-
-
-requests_cache.install_cache('audit_cache')
+VIEWS = [bids_owner_date, tenders_owner_date]
 NEW_ALG_DATE = "2017-08-16"
 
 
 class BaseUtility(object):
 
-    def __init__(self, operation, rev=False):
-        self.rev = rev
-        self.headers = None
+    def __init__(
+            self, broker, period, config,
+            timezone="Europe/Kiev", operation=""
+            ):
+        self.broker = broker
+        self.period = period
+        self.timezone = timezone
         self.operation = operation
         self.threshold_date = '2017-01-01T00:00+02:00'
+        self.config = Config(config, self.operation)
+        self.start_date, self.end_date = prepare_report_interval(
+            self.period
+        )
+        self.connect_db()
+        self.Logger = getLogger("BILLING")
 
-    def _initialize(self, broker, period, config, tz=''):
-        self.broker = broker
-        self.config = Config(config, self.rev)
-        self.start_date = ''
-        self.end_date = ''
-        self.timezone = tz
-        self.payments = []
-
-        if period:
-            if len(period) == 1:
-                self.start_date = self.convert_date(period[0])
-            if len(period) == 2:
-                self.start_date = self.convert_date(period[0])
-                self.end_date = self.convert_date(period[1])
-        self.get_db_connection()
-        self.Logger = getLogger(self.operation)
-        self.payments = self.config.payments(False)
-        self.payments_before = self.config.payments(True)
-
-    def get_db_connection(self):
-        host = self.config.get_option('db', 'host')
-        port = self.config.get_option('db', 'port')
-        user_name = self.config.get_option('user', 'username')
-        user_password = self.config.get_option('user', 'password')
-
-        db_name = self.config.get_option('db', 'name')
-
+    @retry(wait_exponential_multiplier=1000, stop_max_attempt_number=5)
+    def connect_db(self):
         self.db = couchdb.Database(
-            create_db_url(host, port, user_name, user_password, db_name),
+            self.config.db_url,
             session=couchdb.Session(retry_delays=range(10))
         )
 
-        a_name = self.config.get_option('admin', 'username')
-        a_password = self.config.get_option('admin', 'password')
         self.adb = couchdb.Database(
-            create_db_url(host, port, a_name, a_password, db_name)
+            self.config.adb_url,
+            session=couchdb.Session(retry_delays=range(10))
         )
 
     def row(self):
@@ -80,23 +56,16 @@ class BaseUtility(object):
     def rows(self):
         raise NotImplemented
 
-    def convert_date(self, date):
-        if len(date) < 3:
-            date = time.strftime("%Y-%m-") + date
-        date = arrow.get(parse(date), self.timezone)
-        res = date.to('UTC').strftime("%Y-%m-%dT%H:%M:%S.%f")
-        return res
-
-    def get_payment(self, value, before_2017=False):
-        p = self.payments_before if before_2017 else self.payments
+    def get_payment(self, value, year=2017):
+        p = self.config.payments(grid=year)
         for index, threshold in enumerate(self.config.thresholds):
             if value <= threshold:
                 return p[index]
         return p[-1]
 
+    @retry(wait_exponential_multiplier=1000, stop_max_attempt_number=5)
     def _sync_views(self):
-
-        ViewDefinition.sync_many(self.adb, views)
+        ViewDefinition.sync_many(self.adb, VIEWS)
         _id = '_design/report'
         original = self.adb.get(_id)
         original['views']['lib'] = {
@@ -105,83 +74,66 @@ class BaseUtility(object):
             'bids': bids_lib
         }
         self.adb.save(original)
-        ViewDefinition.sync_many(self.adb, views)
 
-    def get_response(self):
+    def convert_value(self, row):
+        value, curr = row.get(u'value', 0), row.get(u'currency', u'UAH')
+        if curr != u'UAH':
+            old = float(value)
+            value, rate = value_currency_normalize(
+                old, row[u'currency'], row[u'startdate'], self.config.proxy_address
+            )
+            msg = "Changed value {} {} by exgange rate {} on {}"\
+                " is  {} UAH in {}".format(
+                    old, row[u'currency'], rate,
+                    row[u'startdate'], value, row['tender']
+                )
+            self.Logger.info(msg)
+            return value, rate
+        return value, "-"
+
+    @property
+    @retry(wait_exponential_multiplier=1000, stop_max_attempt_number=5)
+    def response(self):
         self._sync_views()
-
         if not self.view:
             raise NotImplemented
-
-        if not self.start_date and not self.end_date:
-            self.response = self.db.iterview(
-                self.view, 1000,
-                startkey=(self.broker, ""),
-                endkey=(self.broker, "9999-12-30T00:00:00.000000")
-            )
-        elif self.start_date and not self.end_date:
-            self.response = self.db.iterview(
-                self.view, 1000,
-                startkey=(self.broker, self.start_date),
-                endkey=(self.broker, "9999-12-30T00:00:00.000000")
-            )
-        else:
-            self.response = self.db.iterview(
-                self.view, 1000,
-                startkey=(self.broker, self.start_date),
-                endkey=(self.broker, self.end_date)
-            )
-
-    def out_name(self):
-        start = ''
-        end = ''
-        if self.start_date:
-            start = arrow.get(parse(self.start_date))\
-                .to('Europe/Kiev').strftime("%Y-%m-%d")
-        if self.end_date:
-            end = arrow.get(parse(self.end_date))\
-                .to('Europe/Kiev').strftime("%Y-%m-%d")
-        name = "{}@{}--{}-{}.csv".format(
-            self.broker,
-            start,
-            end,
-            self.operation
-        )
-        self.put_path = os.path.join(self.config.out_path, name)
+        return self.db.iterview(
+            self.view,
+            1000,
+            startkey=(self.broker, self.start_date),
+            endkey=(self.broker, self.end_date))
 
     def write_csv(self):
         if not self.headers:
             raise ValueError
-        if not os.path.exists(os.path.dirname(os.path.abspath(self.put_path))):
-            os.makedirs(os.path.dirname(os.path.abspath(self.put_path)))
-        with open(self.put_path, 'w') as out_file:
+        destination = prepare_result_file_name(self)
+        if not os.path.exists(os.path.dirname(destination)):
+            os.makedirs(os.path.dirname(destination))
+
+        with open(destination, 'w') as out_file:
             writer = csv.writer(out_file)
             writer.writerow(self.headers)
             for row in self.rows():
                 writer.writerow(row)
 
     def run(self):
-        self.get_response()
-        self.out_name()
+        self.Logger.info("Start generating {} for {} for period: {}".format(
+            self.operation,
+            self.broker,
+            self.period
+            ))
         self.write_csv()
 
 
 class BaseBidsUtility(BaseUtility):
 
-    def __init__(self, operation):
-        super(BaseBidsUtility, self).__init__(operation)
+    def __init__(
+            self, broker, period, config,
+            timezone="Europe/Kiev", operation="bids"
+            ):
         self.view = 'report/bids_owner_date'
-        self.skip_bids = set()
-        self.initial_bids = []
-        self.initial_bids_for = ''
-        parser = get_cmd_parser()
-        args = parser.parse_args()
-        self._initialize(
-            args.broker,
-            args.period,
-            args.config,
-            args.timezone
-        )
+        super(BaseBidsUtility, self).__init__(
+            broker, period, config, operation=operation, timezone=timezone)
 
     def get_initial_bids(self, audit, tender_id):
         url = audit is not None and audit.get('url')
@@ -212,69 +164,3 @@ class BaseBidsUtility(BaseUtility):
             self.Logger.info('Skipped fetched early bid: %s', bid_id)
             return False
         return True
-
-
-class BaseTendersUtility(BaseUtility):
-
-    def __init__(self, operation):
-        super(BaseTendersUtility, self).__init__(operation, rev=True)
-        self.view = 'report/tenders_owner_date'
-        self.tenders_to_ignore = set()
-        self.lots_to_ignore = set()
-        parser = get_cmd_parser()
-        parser.add_argument(
-            '--kind',
-            metavar='Kind',
-            action=Kind,
-            help='Kind filtering functionality. '
-                 'Usage: --kind <include, exclude, one>=<kinds>'
-        )
-        parser.add_argument(
-            '--status',
-            metavar='status',
-            action=Status,
-            help='Tenders statuses filtering functionality. '
-                 'Usage: --status <include, exclude, one>=<statuses>'
-        )
-
-        parser.add_argument(
-            '-i',
-            '--ignore',
-            dest='ignore',
-            type=argparse.FileType('r'),
-            help='File with ids that should be skipped'
-        )
-
-        parser.add_argument(
-            '--skip-columns',
-            dest='columns',
-            nargs='+',
-            default=[],
-            help='Columns to skip')
-
-        args = parser.parse_args()
-        self.ignore = set()
-        self._initialize(
-            args.broker,
-            args.period,
-            args.config,
-            args.timezone
-        )
-        self.kinds = args.kind
-        self.statuses = args.status['statuses']
-        self.status_action = args.status['action']
-        self.skip_cols = args.columns
-        if args.ignore:
-            self.ignore = [line.strip('\n') for line in args.ignore.readlines()]
-
-    def check_status(self, tender_status, lot_status):
-        if lot_status:
-            if lot_status == 'active':
-                if tender_status not in self.statuses:
-                    return True
-            elif lot_status not in self.statuses:
-                return True
-        else:
-            if tender_status not in self.statuses:
-                return True
-        return False

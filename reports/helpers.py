@@ -1,15 +1,26 @@
+import os.path
 import argparse
+import arrow
 import iso8601
 import requests
 import json
-import requests_cache
 import re
+import datetime
+from yaml import load
+from repoze.lru import lru_cache
+from dateutil.parser import parse
+from time import sleep
+
+from retrying import retry
+
+from logging import getLogger
 
 
-requests_cache.install_cache('exchange_cache')
+RE = re.compile(r'(^.*)@(\d{4}-\d{2}-\d{2}--\d{4}-\d{2}-\d{2})?-([a-z\-]*)\.zip')
+LOGGER = getLogger("BILLING")
 
 
-def get_cmd_parser():
+def get_arguments_parser():
     parser = argparse.ArgumentParser(
         description="Openprocurement Billing"
     )
@@ -61,18 +72,29 @@ def thresholds_headers(cthresholds):
     return result
 
 
-def value_currency_normalize(value, currency, date):
-    if not isinstance(value, (float, int)):
-        raise ValueError
+@lru_cache(10000)
+@retry(wait_exponential_multiplier=1000, stop_max_attempt_number=5)
+def get_rate(currency, date, proxy_address=None):
     base_url = 'http://bank.gov.ua/NBUStatService'\
         '/v1/statdirectory/exchange?date={}&json'.format(
             iso8601.parse_date(date).strftime('%Y%m%d')
         )
-    resp = requests.get(base_url).text.encode('utf-8')
+    if proxy_address:
+        resp = requests.get(base_url, proxies={'http': proxy_address}).text.encode('utf-8')
+    else:
+        resp = requests.get(base_url).text.encode('utf-8')
     doc = json.loads(resp)
     if currency == u'RUR':
         currency = u'RUB'
     rate = filter(lambda x: x[u'cc'] == currency, doc)[0][u'rate']
+    sleep(15)
+    return rate
+
+
+def value_currency_normalize(value, currency, date, proxy_address=None):
+    if not isinstance(value, (float, int)):
+        raise ValueError
+    rate = get_rate(currency, date, proxy_address)
     return value * rate, rate
 
 
@@ -207,50 +229,89 @@ class Status(argparse.Action):
         self.statuses['statuses'] = set(sts)
 
 
-def get_operations(name):
-    words = re.findall(r'\w+', name)
-    return [w for w in words
-            if w in ['bids', 'invoices', 'refunds', 'tenders']]
+def convert_date(
+        date, timezone="Europe/Kiev",
+        to="UTC", format="%Y-%m-%dT%H:%M:%S.%f"
+        ):
+    date = arrow.get(parse(date), timezone)
+    return date.to(to).strftime(format)
 
 
-def get_send_args_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '-c',
-        '--config',
-        dest='config',
-        required=True,
-        help='Path to configuration file'
-    )
-    parser.add_argument(
-        '-f',
-        '--file',
-        nargs='+',
-        dest='files',
-        help='Files to send'
-    )
-    parser.add_argument(
-        '-n',
-        '--notify',
-        action='store_true',
-        help='Notification flag'
-    )
-    parser.add_argument(
-        '-e',
-        '--exists',
-        action='store_true',
-        help='Send mails from existing directory; timestamp required'
-    )
-    parser.add_argument(
-        '-t',
-        '--timestamp',
-        help='Initial run timestamp'
-    )
-    parser.add_argument(
-        '-b',
-        '--brokers',
-        nargs='+',
-        help='Recipients'
+def prepare_report_interval(period=None):
+    if not period:
+        return ("", "9999-12-30T00:00:00.000000")
+    if len(period) == 1:
+        return (convert_date(period[0]), "9999-12-30T00:00:00.000000")
+    if len(period) == 2:
+        return (convert_date(period[0]), convert_date(period[1]))
+    raise ValueError("Invalid period")
+
+
+def prepare_result_file_name(utility):
+    start, end = "", ""
+    if utility.start_date:
+        start = convert_date(
+                utility.start_date,
+                timezone="UTC",
+                to="Europe/Kiev",
+                format="%Y-%m-%d"
+                )
+    if not utility.end_date.startswith("9999"):
+        end = convert_date(
+                utility.end_date,
+                timezone="UTC",
+                to="Europe/Kiev",
+                format="%Y-%m-%d"
+                )
+    return os.path.join(
+            utility.config.out_path,
+            "{}@{}--{}-{}.csv".format(
+                utility.broker,
+                start,
+                end,
+                utility.operation
+                )
+            )
+
+
+def parse_period_string(period):
+    if period:
+        dates = period.split('--')
+        if len(dates) > 2:
+            raise ValueError("Invalid date string")
+        start, end = [parse(date) for date in period.split('--')]
+    else:
+        end = datetime.date.today().replace(day=1)
+        start = (end - datetime.timedelta(days=1)).replace(day=1)
+    return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
+
+
+def get_out_name(files):
+    broker = os.path.basename(files[0].split('@')[0])
+    date = os.path.basename(files[0].split('@')[1]).split('-')[:-1]
+    operations = set(
+        [os.path.basename(f).split('-')[-1].split('.')[0] for f in files]
     )
 
-    return parser
+    out_name = '{}@{}-{}.zip'.format(
+        broker, '-'.join(date), '-'.join(operations)
+    )
+    return out_name
+
+
+def create_email_context_from_filename(file_name):
+    broker, period, ops = next(iter(re.findall(RE, file_name)))
+    if ops:
+        ops = ops.split('-')
+    type = ' and '.join(ops) if len(ops) == 2 else ', '.join(ops)
+    return {
+        'type': type,
+        'broker': broker,
+        'encrypted': bool('bids' in ops),
+        'period': period
+    }
+
+
+def read_config(path):
+    with open(path) as _in:
+        return load(_in)

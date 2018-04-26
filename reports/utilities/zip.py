@@ -3,62 +3,46 @@ import argparse
 import os.path
 import ConfigParser
 
-
-def get_out_name(files):
-    broker = os.path.basename(files[0].split('@')[0])
-    date = os.path.basename(files[0].split('@')[1]).split('-')[:-1]
-    operations = set(
-        [os.path.basename(f).split('-')[-1].split('.')[0] for f in files]
-    )
-
-    out_name = '{}@{}-{}.zip'.format(
-        broker, '-'.join(date), '-'.join(operations)
-    )
-    return out_name
+from reports.helpers import get_out_name
+from logging import getLogger
 
 
-def get_argument_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '-f',
-        '--files',
-        dest='files',
-        nargs='+',
-        required=True
-    )
-    parser.add_argument(
-        '-c',
-        '--config',
-        dest='config',
-        required=True
-    )
-    parser.add_argument(
-        '-p',
-        '--password',
-    )
+LOGGER = getLogger("BILLING")
 
-    parser.add_argument(
-        '-z',
-        '--zipname',
+
+def compress(files, basedir, name, password):
+    zipname = os.path.join(basedir, name)
+    LOGGER.info("Creating archive {}".format(zipname))
+    pyminizip.compress_multiple(
+        [os.path.join(basedir, file) for file in files],
+        os.path.join(basedir, name),
+        password,
+        4
     )
-    return parser
+    return zipname
 
 
 def run():
-    parser = get_argument_parser()
+    parser = argparse.ArgumentParser(description="Openprocurement Billing")
+    parser.add_argument('-f', '--files', action="append", required=True)
+    parser.add_argument('-c', '--config', required=True)
+    parser.add_argument('-p', '--password')
+    parser.add_argument('-z', '--zipname')
+
     args = parser.parse_args()
     config = ConfigParser.ConfigParser()
     config.read(args.config)
     if args.zipname:
-        out_name = args.zipname
+        zip_name = args.zipname
     else:
         try:
-            out_name = get_out_name(args.files)
-        except:
-            out_name = '{}.zip'.format(os.path.basename(args.files[0]))
-    pyminizip.compress_multiple(
+            zip_name = get_out_name(args.files)
+        except Exception:
+            zip_name = '{}.zip'.format(os.path.basename(args.files[0]))
+    name = compress(
         args.files,
-        os.path.join(config.get('out', 'out_dir'), out_name),
-        args.password,
-        4
+        config.get('out', 'out_dir'),
+        zip_name,
+        args.password
     )
+    LOGGER.info('Created: {}'.format(name))

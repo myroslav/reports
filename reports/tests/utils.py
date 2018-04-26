@@ -5,41 +5,26 @@ import os.path
 
 test_data = {
     "procurementMethod": "open",
-    "status": "complete",
-    "owner": "",
-    "_id": "0006651836f34bcda9a030c0bf3c0e6e",
-    "tenderID": "UA-2016-11-12-000150",
-    "dateModified": "2016-04-31T19:03:53.704712+03:00",
+    "doc_type": "Tender",
+    "qualificationPeriod": {
+        "startDate": "2017-11-14T15:15:00+02:00"
+    },
+    "date": "2017-11-15T00:01:50Z",
+    "owner": "test",
+    "_id": "tender_id",
+    "tenderID": "UA-2017-11-30",
+    "dateModified": "2017-08-31T19:03:53.704712+03:00",
     "tenderPeriod": {
-        "startDate": "2016-11-13T15:15:00+02:00",
+        "startDate": "2017-11-13T15:15:00+02:00",
     },
     "enquiryPeriod": {
-        "startDate": "",
+        "startDate": "2017-11-13T15:15:00+02:00",
     },
-    "contracts": [{
-        "status": "",
-        "id": "1ac8c648538d4930918b0b0a1e884ef2",
-        "awardID": "3d5182c5a0424a4f8508da712affa82f"
-    }],
-    "awards": [{
-        "status": "",
-        "bid_id": "44931d9653034837baff087cfc2fb5ac",
-        "date": "2016-11-17T13:32:25.774673+02:00",
-        "id": "3d5182c5a0424a4f8508da712affa82f"
-    }],
-    "bids": [{
-        "owner": "test",
-        "date": "data",
-        "id": "some_id"
-    }],
     "value": {
         "currency": "UAH",
         "amount": 1000,
-    },
-    "procuringEntity": {
-        'kind': 'general',
-    },
-
+        "valueAddedTaxIncluded": False
+    }
 }
 
 
@@ -53,7 +38,7 @@ class MockCurrencyResponce(object):
      "rate":2,"cc":"USD","exchangedate":"16.05.2016"}]
     '''
 
-test_config = os.path.join(os.path.dirname(__file__), 'tests.ini')
+test_config = os.path.join(os.path.dirname(__file__), 'tests.yaml')
 
 
 def get_mock_parser():

@@ -1,0 +1,92 @@
+db:
+  host: {{ parts['couchdb.ini'].host }}
+  port: {{ parts['couchdb.ini'].port }}
+  name: {{ db_name }}
+
+
+admin:
+  username: {{ admin_name }}
+  password: {{ admin_password }}
+
+user:
+  username: {{ user_name }}
+  password: {{ user_password }}
+
+vault:
+  address: http://{{ vault_address }}
+  token: {{ vault_token }} 
+
+payments:
+  thresholds: [20000, 50000, 200000, 1000000]
+  grids: [2016,2017]
+
+proxy_address: {{ proxy_address }}
+
+storage:
+  type: {{storage_type}} 
+
+{{ storage }}
+
+2016:
+  cdb: [7, 50, 150, 250, 700]
+  emall: [5, 20, 50, 75, 350]
+
+2017:
+  cdb: [5, 25, 80, 110, 400]
+  emall: [3, 15, 40, 60, 300]
+
+out:
+  out_dir: {{ parts.buildout.directory }}/var/reports
+
+api:
+  host: {{ api_host }}
+  version:  {{ api_ver }}
+
+email:
+  smtp_server: {{ smtp_server }}
+  smtp_port: {{ smtp_port }}
+  verified_email: {{ verified_email }}
+  use_auth: {{ use_auth }}
+  password_prefix: {{ smtp_password_prefix }}
+
+
+{{ emails }}
+
+
+brokers_keys:
+  passwords_prefix:  {{ passwords_prefix }}
+
+version: 1
+disable_existing_loggers: false
+formatters:
+  simpleFormater:
+    format: "[%(asctime)s] - [%(levelname)s] %(name)-8s -- %(message)s"
+
+loggers:
+  "":
+    level: WARN
+    propagate: False
+    handlers:
+    - stream_handler
+    - journal
+  BILLING:
+    level: INFO
+    propagate: False
+    handlers:
+    - stream_handler
+    - journal
+
+
+handlers:
+  stream_handler: 
+    class: logging.handlers.RotatingFileHandler
+    formatter: simpleFormater
+    filename: {{ parts.buildout.directory }}/var/log/reports.log
+    maxBytes: 1048576
+    backupCount: 10
+    level: INFO
+  journal:
+    class: ExtendedJournalHandler.ExtendedJournalHandler
+    formatter: simpleFormater
+    level: INFO
+    SYSLOG_IDENTIFIER: API_BILLING 

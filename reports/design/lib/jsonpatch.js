@@ -1,529 +1,540 @@
-/* @preserve
- * JSONPatch.js
- *
- * A Dharmafly project written by Thomas Parslow
- * <tom@almostobsolete.net> and released with the kind permission of
- * NetDev.
- *
- * Copyright 2011-2013 Thomas Parslow. All rights reserved.
- * Permission is hereby granted,y free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to
- * deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
- * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * IN THE SOFTWARE.
- *
- * Implements the JSON Patch IETF RFC 6902 as specified at:
- *
- *   http://tools.ietf.org/html/rfc6902
- *
- * Also implements the JSON Pointer IETF RFC 6901 as specified at:
- *
- *   http://tools.ietf.org/html/rfc6901
- *
- */
+var indexOf = [].indexOf || function(item) {
+                for (var i = 0, l = this.length; i < l; i++) {
+                              if (i in this && this[i] === item) return i;
+                          }
+                return -1;
+            },
+          extend = function(child, parent) {
+                        for (var key in parent) {
+                                  if (hasProp.call(parent, key)) child[key] = parent[key];
+                              }
 
-(function (root, factory) {
-    if (typeof exports === 'object') {
-        // Node
-        factory(module.exports);
-    } else if (typeof define === 'function' && define.amd) {
-        // AMD. Register as an anonymous module.
-        define(['exports'], factory);
-    } else {
-        // Browser globals (root is window)
-        root.jsonpatch = {};
-        root.returnExports = factory(root.jsonpatch);
-  }
-}(this, function (exports) {
-  var apply_patch, JSONPatch, JSONPointer,_operationRequired,isArray;
+                        function ctor() {
+                                  this.constructor = child;
+                              }
+                        ctor.prototype = parent.prototype;
+                        child.prototype = new ctor();
+                        child.__super__ = parent.prototype;
+                        return child;
+                    },
+          hasProp = {}.hasOwnProperty;
+  var AddPatch, CopyPatch, InvalidPatchError, InvalidPointerError, JSONPatch, JSONPatchError, JSONPointer, MovePatch, PatchConflictError, PatchTestFailed, RemovePatch, ReplacePatch, TestPatch, _isEqual, accessorMatch, apply, compile, escapedSlash, escapedTilde, hasOwnProperty, isArray, isEqual, isObject, isString, operationMap, toString;
+  toString = Object.prototype.toString;
+  hasOwnProperty = Object.prototype.hasOwnProperty;
+  isArray = function(obj) {
+            return toString.call(obj) === '[object Array]';
+        };
+  isObject = function(obj) {
+            return toString.call(obj) === '[object Object]';
+        };
+  isString = function(obj) {
+            return toString.call(obj) === '[object String]';
+        };
+  _isEqual = function(a, b, stack) {
+            var className, key, length, result, size;
+            if (a === b) {
+                      return a !== 0 || 1 / a === 1 / b;
+                  }
+            if (a === null || b === null) {
+                      return a === b;
+                  }
+            className = toString.call(a);
+            if (className !== toString.call(b)) {
+                      return false;
+                  }
+            switch (className) {
+                          case '[object String]':
+                              String(a) === String(b);
+                              break;
+                          case '[object Number]':
+                              a = +a;
+                              b = +b;
+                              if (a !== a) {
+                                                b !== b;
+                                            } else {
+                                                if (a === 0) {
+                                                              1 / a === 1 / b;
+                                                          } else {
+                                                              a === b;
+                                                          }
+                                                      }
+                              break;
+                          case '[object Boolean]':
+                              +a === +b;
+                      }
+            if (typeof a !== 'object' || typeof b !== 'object') {
+                      return false;
+                  }
+            length = stack.length;
+            while (length--) {
+                      if (stack[length] === a) {
+                                    return true;
+                                }
+                  }
+            stack.push(a);
+            size = 0;
+            result = true;
+            if (className === '[object Array]') {
+                      size = a.length;
+                      result = size === b.length;
+                      if (result) {
+                                    while (size--) {
+                                                  if (!(result = indexOf.call(a, size) >= 0 === indexOf.call(b, size) >= 0 && _isEqual(a[size], b[size], stack))) {
+                                                                    break;
+                                                                }
+                                              }
+                                }
+                  } else {
+                      if (indexOf.call(a, "constructor") >= 0 !== indexOf.call(b, "constructor") >= 0 || a.constructor !== b.constructor) {
+                                    return false;
+                                }
+                                for (key in a) {
+                                          if (hasOwnProperty.call(a, key)) {
+                                                            size++;
+                                                            if (!(result = hasOwnProperty.call(b, key) && _isEqual(a[key], b[key], stack))) {
+                                                                          break;
+                                                                      }
+                                                        }
+                                      }
+                                if (result) {
+                                          for (key in b) {
+                                                            if (hasOwnProperty.call(b, key) && !size--) {
+                                                                          break;
+                                                                      }
+                                                        }
+                                          result = !size;
+                                      }
+                            }
+            stack.pop();
+            return result;
+        };
+  isEqual = function(a, b) {
+            return _isEqual(a, b, []);
+        };
+  JSONPatchError = (function(superClass) {
+            extend(JSONPatchError, superClass);
 
-  // Taken from underscore.js
-  isArray = Array.isArray || function(obj) {
-    return Object.prototype.toString.call(obj) == '[object Array]';
-  };
+            function JSONPatchError(message) {
+                      this.message = message != null ? message : 'JSON patch error';
+                      this.name = 'JSONPatchError';
+                  }
 
-  /* Public: Shortcut to apply a patch the document without having to
-   * create a patch object first. Returns the patched document. Does
-   * not damage the original document, but will reuse parts of its
-   * structure in the new one.
-   *
-   * doc - The target document to which the patch should be applied.
-   * patch - A JSON Patch document specifying the changes to the
-   *         target documentment
-   *
-   * Example (node.js)
-   *
-   *    jsonpatch = require('jsonpatch');
-   *    doc = JSON.parse(sourceJSON);
-   *    doc = jsonpatch.apply_patch(doc, thepatch);
-   *    destJSON = JSON.stringify(doc);
-   *
-   * Example (in browser)
-   *
-   *     <script src="jsonpatch.js" type="text/javascript"></script>
-   *     <script type="application/javascript">
-   *      doc = JSON.parse(sourceJSON);
-   *      doc = jsonpatch.apply_patch(doc, thepatch);
-   *      destJSON = JSON.stringify(doc);
-   *     </script>
-   *
-   * Returns the patched document
-   */
-  exports.apply_patch = apply_patch = function (doc, patch) {
-    return (new JSONPatch(patch)).apply(doc);
-  };
+            return JSONPatchError;
 
-  /* Public: Error thrown if the patch supplied is invalid.
-   */
-  function InvalidPatch(message) {
-    Error.call(this, message); this.message = message;
-  }
-  exports.InvalidPatch = InvalidPatch;
-  InvalidPatch.prototype = new Error();
-  /* Public: Error thrown if the patch can not be apllied to the given document
-   */
-  function PatchApplyError(message) {
-    Error.call(this, message); this.message = message;
-  }
-  exports.PatchApplyError = PatchApplyError;
-  PatchApplyError.prototype = new Error();
+        })(Error);
+  InvalidPointerError = (function(superClass) {
+            extend(InvalidPointerError, superClass);
 
-  /* Public: A class representing a JSON Pointer. A JSON Pointer is
-   * used to point to a specific sub-item within a JSON document.
-   *
-   * Example (node.js);
-   *
-   *     jsonpatch = require('jsonpatch');
-   *     var pointer = new jsonpatch.JSONPointer('/path/to/item');
-   *     var item = pointer.follow(doc)
-   *
-   */
-  exports.JSONPointer = JSONPointer = function JSONPointer (pathStr) {
-    var i,split,path=[];
-    // Split up the path
-    split = pathStr.split('/');
-    if ('' !== split[0]) {
-      throw new InvalidPatch('JSONPointer must start with a slash (or be an empty string)!');
-    }
-    for (i = 1; i < split.length; i++) {
-      path[i-1] = split[i].replace(/~1/g,'/').replace(/~0/g,'~');
-    }
-    this.path = path;
-    this.length = path.length;
-  };
+            function InvalidPointerError(message) {
+                      this.message = message != null ? message : 'Invalid pointer';
+                      this.name = 'InvalidPointer';
+                  }
 
-  /* Private: Get a segment of the pointer given a current doc
-   * context.
-   */
-  JSONPointer.prototype._get_segment = function (index, node) {
-    var segment = this.path[index];
-    if(isArray(node)) {
-      if ('-' === segment) {
-        segment = node.length;
-      } else {
-        // Must be a non-negative integer in base-10 without leading zeros
-        if (!segment.match(/^0|[1-9][0-9]*$/)) {
-          throw new PatchApplyError('Expected a number to segment an array');
-        }
-        segment = parseInt(segment,10);
-      }
-    }
-    return segment;
-  };
+            return InvalidPointerError;
 
-  // Return a shallow copy of an object
-  function clone(o) {
-    var cloned, key;
-    if (isArray(o)) {
-      return o.slice();
-    // typeof null is "object", but we want to copy it as null
-    } if (o === null) {
-      return o;
-    } else if (typeof o === "object") {
-      cloned = {};
-      for(key in o) {
-        if (Object.hasOwnProperty.call(o, key)) {
-          cloned[key] = o[key];
-        }
-      }
-      return cloned;
-    } else {
-      return o;
-    }
-  }
+        })(Error);
+  InvalidPatchError = (function(superClass) {
+            extend(InvalidPatchError, superClass);
 
-  /* Private: Follow the pointer to its penultimate segment then call
-   * the handler with the current doc and the last key (converted to
-   * an int if the current doc is an array). The handler is expected to
-   * return a new copy of the penultimate part.
-   *
-   * doc - The document to search within
-   * handler - The callback function to handle the last part
-   *
-   * Returns the result of calling the handler
-   */
-  JSONPointer.prototype._action = function (doc, handler, mutate) {
-    var that = this;
-    function follow_pointer(node, index) {
-      var segment, subnode;
-      if (!mutate) {
-        node = clone(node);
-      }
-      segment = that._get_segment(index, node);
-      // Is this the last segment?
-      if (index == that.path.length-1) {
-        node = handler(node, segment);
-      } else {
-        // Make sure we can follow the segment
-        if (isArray(node)) {
-          if (node.length <= segment) {
-            throw new PatchApplyError('Path not found in document');
-          }
-        } else if (typeof node === "object") {
-          if (!Object.hasOwnProperty.call(node, segment)) {
-            throw new PatchApplyError('Path not found in document');
-          }
-        } else {
-          throw new PatchApplyError('Path not found in document');
-        }
-        subnode = follow_pointer(node[segment], index+1);
-        if (!mutate) {
-          node[segment] = subnode;
-        }
-      }
-      return node;
-    }
-    return follow_pointer(doc, 0);
-  };
+            function InvalidPatchError(message) {
+                      this.message = message != null ? message : 'Invalid patch';
+                      this.name = 'InvalidPatch';
+                  }
 
-  /* Public: Takes a JSON document and a value and adds the value into
-   * the doc at the position pointed to. If the position pointed to is
-   * in an array then the existing element at that position (if any)
-   * and all that follow it have their position incremented to make
-   * room. It is an error to add to a parent object that doesn't exist
-   * or to try to replace an existing value in an object.
-   *
-   * doc - The document to operate against. Will be mutated so should
-   * not be reused after the call.
-   * value - The value to insert at the position pointed to
-   *
-   * Examples
-   *
-   *    var doc = new JSONPointer("/obj/new").add({obj: {old: "hello"}}, "world");
-   *    // doc now equals {obj: {old: "hello", new: "world"}}
-   *
-   * Returns the updated doc (the value passed in may also have been mutated)
-   */
-  JSONPointer.prototype.add = function (doc, value, mutate) {
-    // Special case for a pointer to the root
-    if (0 === this.length) {
-      return value;
-    }
-    return this._action(doc, function (node, lastSegment) {
-      if (isArray(node)) {
-        if (lastSegment > node.length) {
-          throw new PatchApplyError('Add operation must not attempt to create a sparse array!');
-        }
-        node.splice(lastSegment, 0, value);
-      } else {
-        node[lastSegment] = value;
-      }
-      return node;
-    }, mutate);
-  };
+            return InvalidPatchError;
 
+        })(JSONPatchError);
+  PatchConflictError = (function(superClass) {
+            extend(PatchConflictError, superClass);
 
-  /* Public: Takes a JSON document and removes the value pointed to.
-   * It is an error to attempt to remove a value that doesn't exist.
-   *
-   * doc - The document to operate against. May be mutated so should
-   * not be reused after the call.
-   *
-   * Examples
-   *
-   *    var doc = new JSONPointer("/obj/old").add({obj: {old: "hello"}});
-   *    // doc now equals {obj: {}}
-   *
-   * Returns the updated doc (the value passed in may also have been mutated)
-   */
-  JSONPointer.prototype.remove = function (doc, mutate) {
-    // Special case for a pointer to the root
-    if (0 === this.length) {
-      // Removing the root makes the whole value undefined.
-      // NOTE: Should it be an error to remove the root if it is
-      // ALREADY undefined? I'm not sure...
-      return undefined;
-    }
-    return this._action(doc, function (node, lastSegment) {
-        if (!Object.hasOwnProperty.call(node,lastSegment)) {
-          throw new PatchApplyError('Remove operation must point to an existing value!');
-        }
-        if (isArray(node)) {
-          node.splice(lastSegment, 1);
-        } else {
-          delete node[lastSegment];
-        }
-      return node;
-    }, mutate);
-  };
+            function PatchConflictError(message) {
+                      this.message = message != null ? message : 'Patch conflict';
+                      this.name = 'PatchConflictError';
+                  }
 
-  /* Public: Semantically equivalent to a remove followed by an add
-   * except when the pointer points to the root element in which case
-   * the whole document is replaced.
-   *
-   * doc - The document to operate against. May be mutated so should
-   * not be reused after the call.
-   *
-   * Examples
-   *
-   *    var doc = new JSONPointer("/obj/old").replace({obj: {old: "hello"}}, "world");
-   *    // doc now equals {obj: {old: "world"}}
-   *
-   * Returns the updated doc (the value passed in may also have been mutated)
-   */
-  JSONPointer.prototype.replace = function (doc, value, mutate) {
-    // Special case for a pointer to the root
-    if (0 === this.length) {
-      return value;
-    }
-    return this._action(doc, function (node, lastSegment) {
-        if (!Object.hasOwnProperty.call(node,lastSegment)) {
-          throw new PatchApplyError('Replace operation must point to an existing value!');
-        }
-        if (isArray(node)) {
-          node.splice(lastSegment, 1, value);
-        } else {
-          node[lastSegment] = value;
-        }
-      return node;
-    }, mutate);
-  };
+            return PatchConflictError;
 
-  /* Public: Returns the value pointed to by the pointer in the given doc.
-   *
-   * doc - The document to operate against.
-   *
-   * Examples
-   *
-   *    var value = new JSONPointer("/obj/value").get({obj: {value: "hello"}});
-   *    // value now equals 'hello'
-   *
-   * Returns the value
-   */
-  JSONPointer.prototype.get = function (doc) {
-    var value;
-    if (0 === this.length) {
-      return doc;
-    }
-    this._action(doc, function (node, lastSegment) {
-      if (!Object.hasOwnProperty.call(node,lastSegment)) {
-        throw new PatchApplyError('Path not found in document');
-      }
-      value = node[lastSegment];
-      return node;
-    }, true);
-    return value;
-  };
+        })(JSONPatchError);
+  PatchTestFailed = (function(superClass) {
+            extend(PatchTestFailed, superClass);
 
+            function PatchTestFailed(message) {
+                      this.message = message != null ? message : 'Patch test failed';
+                      this.name = 'PatchTestFailed';
+                  }
 
-  /* Public: returns true if this pointer points to a child of the
-   * other pointer given. Returns true if both point to the same place.
-   *
-   * otherPointer - Another JSONPointer object
-   *
-   * Examples
-   *
-   *    var pointer1 = new JSONPointer('/animals/mammals/cats/holly');
-   *    var pointer2 = new JSONPointer('/animals/mammals/cats');
-   *    var isChild = pointer1.subsetOf(pointer2);
-   *
-   * Returns a boolean
-   */
-  JSONPointer.prototype.subsetOf = function (otherPointer) {
-    if (this.length <= otherPointer.length) {
-      return false;
-    }
-    for (var i = 0; i < otherPointer.length; i++) {
-      if (otherPointer.path[i] !== this.path[i]) {
-        return false;
-      }
-    }
-    return true;
-  };
+            return PatchTestFailed;
 
-  _operationRequired = {
-    add: ['value'],
-    replace: ['value'],
-    test: ['value'],
-    remove: [],
-    move: ['from'],
-    copy: ['from']
-  };
+        })(Error);
+  escapedSlash = /~1/g;
+  escapedTilde = /~0/g;
+  accessorMatch = /^[-+]?\d+$/;
+  JSONPointer = (function() {
+            function JSONPointer(path) {
+                      var i, j, len1, step, steps;
+                      steps = [];
+                      if (path && (steps = path.split('/')).shift() !== '') {
+                                    throw new InvalidPointerError();
+                                }
+                      for (i = j = 0, len1 = steps.length; j < len1; i = ++j) {
+                                    step = steps[i];
+                                    steps[i] = step.replace(escapedSlash, '/').replace(escapedTilde, '~');
+                                }
+                      this.accessor = steps.pop();
+                      this.steps = steps;
+                      this.path = path;
+                  }
 
-  // Check if a is deep equal to b (by the rules given in the
-  // JSONPatch spec)
-  function deepEqual(a,b) {
-    var key;
-    if (a === b) {
-      return true;
-    } else if (typeof a !== typeof b) {
-      return false;
-    } else if ('object' === typeof(a)) {
-      var aIsArray = isArray(a),
-          bIsArray = isArray(b);
-      if (aIsArray !== bIsArray) {
-        return false;
-      } else if (aIsArray) {
-        // Both are arrays
-        if (a.length != b.length) {
-          return false;
-        } else {
-          for (var i = 0; i < a.length; i++) {
-            return deepEqual(a[i], b[i]);
-          }
-        }
-      } else {
-        // Check each key of the object recursively
-        for(key in a) {
-          if (Object.hasOwnProperty(a, key)) {
-            if (!(Object.hasOwnProperty(b,key) && deepEqual(a[key], b[key]))) {
-              return false;
-            }
-          }
-        }
-        for(key in b) {
-          if(Object.hasOwnProperty(b,key) && !Object.hasOwnProperty(a, key)) {
-            return false;
-          }
-        }
-        return true;
-      }
-    } else {
-      return false;
-    }
-  }
+            JSONPointer.prototype.getReference = function(parent) {
+                      var j, len1, ref, step;
+                      ref = this.steps;
+                      for (j = 0, len1 = ref.length; j < len1; j++) {
+                                    step = ref[j];
+                                    if (isArray(parent)) {
+                                                  step = parseInt(step, 10);
+                                              }
+                                    if (!(step in parent)) {
+                                                  throw new PatchConflictError('Array location out of bounds or not an instance property');
+                                              }
+                                    parent = parent[step];
+                                }
+                      return parent;
+                  };
 
-  function validateOp(operation) {
-    var i, required;
-    if (!operation.op) {
-      throw new InvalidPatch('Operation missing!');
-    }
-    if (!_operationRequired.hasOwnProperty(operation.op)) {
-      throw new InvalidPatch('Invalid operation!');
-    }
-    if (!('path' in operation)) {
-      throw new InvalidPatch('Path missing!');
-    }
+            JSONPointer.prototype.coerce = function(reference, accessor) {
+                      if (isArray(reference)) {
+                                    if (isString(accessor)) {
+                                                  if (accessor === '-') {
+                                                                    accessor = reference.length;
+                                                                } else if (accessorMatch.test(accessor)) {
+                                                                    accessor = parseInt(accessor, 10);
+                                                                } else {
+                                                                    throw new InvalidPointerError('Invalid array index number');
+                                                                }
+                                              }
+                                }
+                      return accessor;
+                  };
 
-    required = _operationRequired[operation.op];
+            return JSONPointer;
 
-    // Check that all required keys are present
-    for(i = 0; i < required.length; i++) {
-      if(!(required[i] in operation)) {
-        throw new InvalidPatch(operation.op + ' must have key ' + required[i]);
-      }
-    }
-  }
+        })();
+  JSONPatch = (function() {
+            function JSONPatch(patch) {
+                      if (!('path' in patch)) {
+                                    throw new InvalidPatchError();
+                                }
+                      this.validate(patch);
+                      this.patch = patch;
+                      this.path = new JSONPointer(patch.path);
+                      this.initialize(patch);
+                  }
 
-  function compileOperation(operation, mutate) {
-    validateOp(operation);
-    var op = operation.op;
-    var path = new JSONPointer(operation.path);
-    var value = operation.value;
-    var from = operation.from ? new JSONPointer(operation.from) : null;
+            JSONPatch.prototype.initialize = function() {};
 
-    switch (op) {
-    case 'add':
-      return function (doc) {
-        return path.add(doc, value, mutate);
-      };
-    case 'remove':
-      return function (doc) {
-        return path.remove(doc, mutate);
-      };
-    case 'replace':
-      return function (doc) {
-        return path.replace(doc, value, mutate);
-      };
-    case 'move':
-      // Check that destination isn't inside the source
-      if (path.subsetOf(from)) {
-        throw new InvalidPatch('destination must not be a child of source');
-      }
-      return function (doc) {
-        var value = from.get(doc);
-        var intermediate = from.remove(doc, mutate);
-        return path.add(intermediate, value, mutate);
-      };
-    case 'copy':
-      return function (doc) {
-        var value = from.get(doc);
-        return path.add(doc, value, mutate);
-      };
-    case 'test':
-      return function (doc) {
-        if (!deepEqual(path.get(doc), value)) {
-          throw new PatchApplyError("Test operation failed. Value did not match.");
-        }
-        return doc;
-      };
-    }
-  }
+            JSONPatch.prototype.validate = function(patch) {};
 
-  /* Public: A class representing a patch.
-   *
-   *  patch - The patch as an array or as a JSON string (containing an
-   *          array)
-   *  mutate - Indicates that input documents should be mutated
-   *           (default is for the input to be unaffected.) This will
-   *           not work correctly if the patch replaces the root of
-   *           the document.
-   */
-  exports.JSONPatch = JSONPatch = function JSONPatch(patch, mutate) {
-    this._compile(patch, mutate);
-  };
+            JSONPatch.prototype.apply = function(document) {
+                      throw new Error('Method not implemented');
+                  };
 
-  JSONPatch.prototype._compile = function (patch, mutate) {
-    var i, _this = this;
-    this.compiledOps = [];
+            return JSONPatch;
 
-    if ('string' === typeof patch) {
-      patch = JSON.parse(patch);
-    }
-    if(!isArray(patch)) {
-      throw new InvalidPatch('Patch must be an array of operations');
-    }
-    for(i = 0; i < patch.length; i++) {
-      var compiled = compileOperation(patch[i], mutate);
-      _this.compiledOps.push(compiled);
-    }
-  };
+        })();
+  AddPatch = (function(superClass) {
+            extend(AddPatch, superClass);
 
-  /* Public: Apply the patch to a document and returns the patched
-   * document.
-   *
-   * doc - The document to which the patch should be applied.
-   *
-   * Returns the patched document
-   */
-  exports.JSONPatch.prototype.apply = function (doc) {
-    var i;
-    for(i = 0; i < this.compiledOps.length; i++) {
-      doc = this.compiledOps[i](doc);
-    }
-    return doc;
-  };
+            function AddPatch() {
+                      return AddPatch.__super__.constructor.apply(this, arguments);
+                  }
 
-}));
+            AddPatch.prototype.validate = function(patch) {
+                      if (!('value' in patch)) {
+                                    throw new InvalidPatchError();
+                                }
+                  };
+
+            AddPatch.prototype.apply = function(document) {
+                      var accessor, reference, value;
+                      reference = this.path.getReference(document);
+                      accessor = this.path.accessor;
+                      value = this.patch.value;
+                      if (isArray(reference)) {
+                                    accessor = this.path.coerce(reference, accessor);
+                                    if (accessor < 0 || accessor > reference.length) {
+                                                  throw new PatchConflictError("Index " + accessor + " out of bounds");
+                                              }
+                                    reference.splice(accessor, 0, value);
+                                } else if (accessor == null) {
+                                    document = value;
+                                } else {
+                                    reference[accessor] = value;
+                                }
+                      return document;
+                  };
+
+            return AddPatch;
+
+        })(JSONPatch);
+  RemovePatch = (function(superClass) {
+            extend(RemovePatch, superClass);
+
+            function RemovePatch() {
+                      return RemovePatch.__super__.constructor.apply(this, arguments);
+                  }
+
+            RemovePatch.prototype.apply = function(document) {
+                      var accessor, reference;
+                      reference = this.path.getReference(document);
+                      accessor = this.path.accessor;
+                      if (isArray(reference)) {
+                                    accessor = this.path.coerce(reference, accessor);
+                                    if (accessor >= reference.length) {
+                                                  throw new PatchConflictError("Value at " + accessor + " does not exist");
+                                              }
+                                    reference.splice(accessor, 1);
+                                } else {
+                                    if (!(accessor in reference)) {
+                                                  throw new PatchConflictError("Value at " + accessor + " does not exist");
+                                              }
+                                              delete reference[accessor];
+                                          }
+                      return document;
+                  };
+
+            return RemovePatch;
+
+        })(JSONPatch);
+  ReplacePatch = (function(superClass) {
+            extend(ReplacePatch, superClass);
+
+            function ReplacePatch() {
+                      return ReplacePatch.__super__.constructor.apply(this, arguments);
+                  }
+
+            ReplacePatch.prototype.validate = function(patch) {
+                      if (!('value' in patch)) {
+                                    throw new InvalidPatchError();
+                                }
+                  };
+
+            ReplacePatch.prototype.apply = function(document) {
+                      var accessor, reference, value;
+                      reference = this.path.getReference(document);
+                      accessor = this.path.accessor;
+                      value = this.patch.value;
+                      if (accessor == null) {
+                                    return value;
+                                }
+                      if (isArray(reference)) {
+                                    accessor = this.path.coerce(reference, accessor);
+                                    if (accessor >= reference.length) {
+                                                  throw new PatchConflictError("Value at " + accessor + " does not exist");
+                                              }
+                                    reference.splice(accessor, 1, value);
+                                } else {
+                                    if (!(accessor in reference)) {
+                                                  throw new PatchConflictError("Value at " + accessor + " does not exist");
+                                              }
+                                              reference[accessor] = value;
+                                          }
+                      return document;
+                  };
+
+            return ReplacePatch;
+
+        })(JSONPatch);
+  TestPatch = (function(superClass) {
+            extend(TestPatch, superClass);
+
+            function TestPatch() {
+                      return TestPatch.__super__.constructor.apply(this, arguments);
+                  }
+
+            TestPatch.prototype.validate = function(patch) {
+                      if (!('value' in patch)) {
+                                    throw new InvalidPatchError("'value' member is required");
+                                }
+                  };
+
+            TestPatch.prototype.apply = function(document) {
+                      var accessor, reference, value;
+                      reference = this.path.getReference(document);
+                      accessor = this.path.accessor;
+                      value = this.patch.value;
+                      if (isArray(reference)) {
+                                    accessor = this.path.coerce(reference, accessor);
+                                }
+                      if (!isEqual(reference[accessor], value)) {
+                                    throw new PatchTestFailed();
+                                }
+                      return document;
+                  };
+
+            return TestPatch;
+
+        })(JSONPatch);
+  MovePatch = (function(superClass) {
+            extend(MovePatch, superClass);
+
+            function MovePatch() {
+                      return MovePatch.__super__.constructor.apply(this, arguments);
+                  }
+
+            MovePatch.prototype.initialize = function(patch) {
+                      var i, j, len, ref, within;
+                      this.from = new JSONPointer(patch.from);
+                      len = this.from.steps.length;
+                      within = true;
+                      for (i = j = 0, ref = len; 0 <= ref ? j <= ref : j >= ref; i = 0 <= ref ? ++j : --j) {
+                                    if (this.from.steps[i] !== this.path.steps[i]) {
+                                                  within = false;
+                                                  break;
+                                              }
+                                }
+                      if (within) {
+                                    if (this.path.steps.length !== len) {
+                                                  throw new InvalidPatchError("'to' member cannot be a descendent of 'path'");
+                                              }
+                                    if (this.from.accessor === this.path.accessor) {
+                                                  return this.apply = function(document) {
+                                                                    return document;
+                                                                };
+                                              }
+                                }
+                  };
+
+            MovePatch.prototype.validate = function(patch) {
+                      if (!('from' in patch)) {
+                                    throw new InvalidPatchError("'from' member is required");
+                                }
+                  };
+
+            MovePatch.prototype.apply = function(document) {
+                      var accessor, reference, value;
+                      reference = this.from.getReference(document);
+                      accessor = this.from.accessor;
+                      if (isArray(reference)) {
+                                    accessor = this.from.coerce(reference, accessor);
+                                    if (accessor >= reference.length) {
+                                                  throw new PatchConflictError("Value at " + accessor + " does not exist");
+                                              }
+                                    value = reference.splice(accessor, 1)[0];
+                                } else {
+                                    if (!(accessor in reference)) {
+                                                  throw new PatchConflictError("Value at " + accessor + " does not exist");
+                                              }
+                                              value = reference[accessor];
+                                              delete reference[accessor];
+                                          }
+                      reference = this.path.getReference(document);
+                      accessor = this.path.accessor;
+                      if (isArray(reference)) {
+                                    accessor = this.path.coerce(reference, accessor);
+                                    if (accessor < 0 || accessor > reference.length) {
+                                                  throw new PatchConflictError("Index " + accessor + " out of bounds");
+                                              }
+                                    reference.splice(accessor, 0, value);
+                                } else {
+                                    if (accessor in reference) {
+                                                  throw new PatchConflictError("Value at " + accessor + " exists");
+                                              }
+                                              reference[accessor] = value;
+                                          }
+                      return document;
+                  };
+
+            return MovePatch;
+
+        })(JSONPatch);
+  CopyPatch = (function(superClass) {
+            extend(CopyPatch, superClass);
+
+            function CopyPatch() {
+                      return CopyPatch.__super__.constructor.apply(this, arguments);
+                  }
+
+            CopyPatch.prototype.apply = function(document) {
+                      var accessor, reference, value;
+                      reference = this.from.getReference(document);
+                      accessor = this.from.accessor;
+                      if (isArray(reference)) {
+                                    accessor = this.from.coerce(reference, accessor);
+                                    if (accessor >= reference.length) {
+                                                  throw new PatchConflictError("Value at " + accessor + " does not exist");
+                                              }
+                                    value = reference.slice(accessor, accessor + 1)[0];
+                                } else {
+                                    if (!(accessor in reference)) {
+                                                  throw new PatchConflictError("Value at " + accessor + " does not exist");
+                                              }
+                                              value = reference[accessor];
+                                          }
+                      reference = this.path.getReference(document);
+                      accessor = this.path.accessor;
+                      if (isArray(reference)) {
+                                    accessor = this.path.coerce(reference, accessor);
+                                    if (accessor < 0 || accessor > reference.length) {
+                                                  throw new PatchConflictError("Index " + accessor + " out of bounds");
+                                              }
+                                    reference.splice(accessor, 0, value);
+                                } else {
+                                    if (accessor in reference) {
+                                                  throw new PatchConflictError("Value at " + accessor + " exists");
+                                              }
+                                              reference[accessor] = value;
+                                          }
+                      return document;
+                  };
+
+            return CopyPatch;
+
+        })(MovePatch);
+  operationMap = {
+            add: AddPatch,
+            remove: RemovePatch,
+            replace: ReplacePatch,
+            move: MovePatch,
+            copy: CopyPatch,
+            test: TestPatch
+        };
+  compile = function(patch) {
+            var j, klass, len1, ops, p;
+            if (!isArray(patch)) {
+                      if (isObject(patch)) {
+                                    patch = [patch];
+                                } else {
+                                    throw new InvalidPatchError('patch must be an object or array');
+                                }
+                  }
+            ops = [];
+            for (j = 0, len1 = patch.length; j < len1; j++) {
+                      p = patch[j];
+                      if (!(klass = operationMap[p.op])) {
+                                    throw new InvalidPatchError('invalid operation: ' + p.op);
+                                }
+                      ops.push(new klass(p));
+                  }
+            return function(document) {
+                      var k, len2, op, result;
+                      result = document;
+                      for (k = 0, len2 = ops.length; k < len2; k++) {
+                                    op = ops[k];
+                                    result = op.apply(result);
+                                }
+                      return result;
+                  };
+        };
+  apply = function(document, patch) {
+            return compile(patch)(document);
+        };
+  exports.version = '0.7.0';
+  exports.apply = apply;
+  exports.compile = compile;
+  exports.JSONPointer = JSONPointer;
+  exports.JSONPatch = JSONPatch;
+  exports.JSONPatchError = JSONPatchError;
+  exports.InvalidPointerError = InvalidPointerError;
+  exports.InvalidPatchError = InvalidPatchError;
+  exports.PatchConflictError = PatchConflictError;
+  exports.PatchTestFailed = PatchTestFailed;

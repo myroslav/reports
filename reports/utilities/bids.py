@@ -1,47 +1,38 @@
 import os
 import csv
+from yaml import load
+from logging.config import dictConfig 
 from reports.core import BaseBidsUtility, NEW_ALG_DATE
-from reports.helpers import (
-    get_cmd_parser,
-    value_currency_normalize
-)
+from reports.helpers import value_currency_normalize,\
+    get_arguments_parser, prepare_result_file_name, read_config
+
+
+HEADERS = [
+    u"tender", u"tenderID", u"lot",
+    u"value", u"currency", u"bid",
+    u'rate', u"bill", u"state"
+]
 
 
 class BidsUtility(BaseBidsUtility):
 
-    def __init__(self):
-        super(BidsUtility, self).__init__('bids')
-        self.headers = [u"tender", u"tenderID", u"lot",
-                        u"value", u"currency", u"bid", u'rate', u"bill", u"state"]
+    headers = HEADERS
 
     def row(self, record):
         startdate = record.get('startdate', '')
         version = 1 if startdate < NEW_ALG_DATE else 2
-        date_terminated = record.get('date_terminated', '')
         state = record.get('state', '')
-        bid = record.get(u'bid', '')
-        rate = None
         row = list(record.get(col, '') for col in self.headers[:-3])
-        value = float(record.get(u'value', 0))
-        if record[u'currency'] != u'UAH':
-            old = value
-            value, rate = value_currency_normalize(
-                value, record[u'currency'], record[u'startdate']
-            )
-            msg = "Changed value {} {} by exgange rate {} on {}"\
-                " is  {} UAH in {}".format(
-                    old, record[u'currency'], rate,
-                    record[u'startdate'], value, record['tender']
-                )
-            self.Logger.info(msg)
+        value, rate = self.convert_value(record)
         r = str(rate) if rate else ''
         row.append(r)
-        row.append(self.get_payment(value))
+        payment = self.get_payment(value)
+        row.append(payment)
         if state:
             row.append(state)
         self.Logger.info(
-            "Bill {} for tender {} with value {}".format(
-                row[-1], row[0], value
+            "Bids: bill {} for tender {} with value {}".format(
+                payment, row[0], value
             )
         )
         return row, version
@@ -49,11 +40,12 @@ class BidsUtility(BaseBidsUtility):
     def write_csv(self):
         second_version = []
         splitter = [u'after {}'.format(NEW_ALG_DATE)]
+        destination = prepare_result_file_name(self)
         if not self.headers:
             raise ValueError
-        if not os.path.exists(os.path.dirname(os.path.abspath(self.put_path))):
-            os.makedirs(os.path.dirname(os.path.abspath(self.put_path)))
-        with open(self.put_path, 'w') as out_file:
+        if not os.path.exists(os.path.dirname(destination)):
+            os.makedirs(os.path.dirname(destination))
+        with open(destination, 'w') as out_file:
             writer = csv.writer(out_file)
             writer.writerow(self.headers)
             writer.writerow(['after_2017-01-01'])
@@ -75,7 +67,12 @@ class BidsUtility(BaseBidsUtility):
 
 
 def run():
-    utility = BidsUtility()
+    parser = get_arguments_parser()
+    args = parser.parse_args()
+    config = read_config(args.config)
+    dictConfig(config)
+    utility = BidsUtility(args.broker, args.period,
+                          config, timezone=args.timezone)
     utility.run()
 
 

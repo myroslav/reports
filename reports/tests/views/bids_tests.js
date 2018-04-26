@@ -413,7 +413,9 @@ describe("bids view tests", () => {
         });
 
         it("tender has valid award and no awards in status active or pending - should return false.", () => {
+            bid.date = '1970-01-01';
             tender.awards[0].bid_id = bid.id;
+            tender.awards[0].date = bid.date;
             assert.isFalse(bids.check_award_for_bid(tender, bid));
         })
 
@@ -469,9 +471,11 @@ describe("bids view tests", () => {
             tender.awards[0].lotID = lot.id;
             assert.isFalse(bids.check_award_for_bid_multilot(tender, bid, lot));
         });
-
+        
         it("tender has valid awards and awards in status active or pending - should return true.", () => {
+            bid.date = '1970-01-01'
             tender.awards[0].status = "active";
+            tender.awards[0].date = bid.date;
             assert.isTrue(bids.check_award_for_bid_multilot(tender, bid, lot));
         });
 

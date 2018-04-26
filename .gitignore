@@ -1,16 +1,70 @@
-env/
-*.pyc
-.env/
-\.\#
-eggs/
-bin/
-etc/
-develop-eggs/
-src/
-var/
-reports.egg*
-\.\#*
-\#*
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# C extensions
+*.so
+.idea/
+# Distribution / packaging
+.Python
+pip-selfcheck*
 *~
-.*
-*\.sqlite
+env/
+etc/
+build/
+include/
+develop-eggs/
+dist/
+downloads/
+eggs/
+include/
+lib/
+lib64/
+logs/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+pip-selfcheck.json
+lib64
+*.egg
+bin/*
+src/*
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+.mr.developer.cfg
+
+# pyenv
+.python-version
+# Except lib for views
+!reports/design/lib

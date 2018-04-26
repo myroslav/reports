@@ -395,12 +395,7 @@ function find_date_from_revisions(original_tender, lot) {
     var revs = original_tender.revisions.slice().reverse().slice(0, original_tender.revisions.length - 1);
     var tender = JSON.parse(JSON.stringify(original_tender));
     for (var i = 0; i < revs.length; i++) {
-        try{
-            var prev = jsp.apply_patch(tender, revs[i].changes);
-        }
-        catch (e) {
-            log(e)
-        }
+        var prev = jsp.apply(tender, revs[i].changes);
         if (!('awards' in prev)) {
             break;
         } else {
@@ -503,7 +498,6 @@ function main(doc) {
     if (doc.doc_type !== "Tender") {return;}
 
     if (doc.procurementMethodType === 'esco') { return []; }
-
     startDate = (doc.enquiryPeriod || {}).startDate;
     //tender checks
     if ( !startDate ) {
